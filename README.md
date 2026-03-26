@@ -22,7 +22,7 @@
 
 This project is a **fully automated AI image variation pipeline** built on top of n8n, triggered entirely through Telegram. No frontend. No manual steps. Just send a photo and a description — and your AI-generated variation lands right back in your chat.
 
-> 💡 Built as a personal automation project by **Prasanth** with assistance from **Claude AI** — March 2026.
+> 💡 Built as a personal automation project by **Prasanth** for learning purpose — March 2026.
 
 ---
 
@@ -130,11 +130,27 @@ You (Telegram)
 
 ## 📸 Screenshots
 
-> 📷 *Screenshots coming soon — workflow canvas, Telegram bot in action, and MinIO storage view.*
+<div align="center">
+  <table border="0">
+    <tr>
+      <th align="center">n8n Workflow Canvas</th>
+      <th align="center">Telegram Bot Demo</th>
+      <th align="center">MinIO Storage</th>
+    </tr>
+    <tr>
+      <td>
+        <img width="400" alt="Workflow" src="https://github.com/user-attachments/assets/5a21e4ec-bb68-463e-b9cf-668ecd74a8aa" />
+      </td>
+      <td>
+        <img width="400" alt="Bot" src="https://github.com/user-attachments/assets/3a12c1cc-17da-4b1e-a3b6-bf9e44a61bf7" />
+      </td>
+      <td>
+        <img width="400" alt="MinIO" src="https://github.com/user-attachments/assets/ec9bc124-03e9-4b6e-a9f9-d40e33abdba6" />
+      </td>
+    </tr>
+  </table>
+</div>
 
-| n8n Workflow Canvas | Telegram Bot Demo | MinIO Storage |
-|---|---|---|
-| ![Workflow](docs/images/workflow.png) | ![Bot](docs/images/telegram-demo.png) | ![MinIO](docs/images/minio.png) |
 
 ---
 
@@ -286,7 +302,7 @@ Got ideas to make this better? PRs are welcome!
 
 **Prasanth** — [@prasanthmax](https://github.com/prasanthmax)
 
-Built with curiosity, coffee, and a lot of Claude AI assistance ☕🤖
+Built with curiosity and a cup of coffee ☕🤖
 
 ---
 
@@ -300,6 +316,6 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 **If this project helped you or inspired you, drop a ⭐ — it means a lot!**
 
-Made with ❤️ by Prasanth | Powered by n8n + FLUX + Telegram
+Made by Prasanth | Powered by n8n + FLUX + Telegram
 
 </div>
