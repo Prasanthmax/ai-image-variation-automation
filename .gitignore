@@ -1,0 +1,7 @@
+minio-data/
+n8n-data/
+.env
+*.env
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,616 @@
+{
+  "name": "ai-image-generation",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.siliconflow.com/v1/images/generations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SILICON_FLOW_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"black-forest-labs/FLUX.1-schnell\",\n  \"prompt\": \"{{ $json.prompt }}\",\n  \"image_size\": \"512x512\",\n  \"num_inference_steps\": 4,\n  \"num_images\": 1\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2496,
+        0
+      ],
+      "id": "6d9dc79d-8eed-49a7-9567-6b868ef9ee99",
+      "name": "Flux image generator",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\n// Safely get image URL\nif (!response.images || response.images.length === 0) {\n  return [\n    {\n      json: {\n        imageUrl: \"\",\n        error: \"No images in response\"\n      }\n    }\n  ];\n}\n\nconst imageUrl = response.images[0].url;\nconst inferenceTime = response.timings ? response.timings.inference : 0;\nconst seed = response.seed || 0;\n\nreturn [\n  {\n    json: {\n      imageUrl: imageUrl,\n      inferenceTime: inferenceTime,\n      seed: seed,\n      generatedAt: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        0
+      ],
+      "id": "8b1e26a3-2dfc-4303-afa4-376abf2fa825",
+      "name": "extract image url"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.imageUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2992,
+        0
+      ],
+      "id": "aa0c7901-5cc7-44a9-92a8-fdfd17751582",
+      "name": "download image"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=http://minio:9000/variants/{{ $now.toFormat('yyyy-MM-dd-HH-mm-ss') }}_variant.png",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "value/png"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3264,
+        0
+      ],
+      "id": "5e34a322-96c9-4881-a10b-488d96bbbc6d",
+      "name": "upload to MinIO"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\nlet caption = \"A beautiful moment captured forever. #Art #Photography #Creative #Beauty #Inspiration\";\n\nif (response.choices && response.choices[0]) {\n  caption = response.choices[0].message.content;\n}\n\n// Get chatId from static data\nconst staticData = $getWorkflowStaticData('global');\nconst chatId = staticData.chatId;\n\nreturn [\n  {\n    json: {\n      caption: caption,\n      chatId: chatId\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2912,
+        224
+      ],
+      "id": "e77a6a6a-f403-4169-b08f-e81e132ef4a7",
+      "name": "Extract caption"
+    },
+    {
+      "parameters": {
+        "operation": "sendPhoto",
+        "chatId": "={{ $json.chatId }}",
+        "file": "={{ $('extract image url').item.json.imageUrl }}",
+        "additionalFields": {
+          "caption": "={{ $('Extract caption').item.json.caption }}"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3120,
+        224
+      ],
+      "id": "f379984b-b6cf-4f5c-8c3b-b04c1a530767",
+      "name": "telegram bot",
+      "webhookId": "67b8a585-b410-4dc3-8fee-babb4efeafaf",
+      "credentials": {
+        "telegramApi": {
+          "id": "HGYyVmAthiAoh9bT",
+          "name": "Telegram bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\nlet rawContent = \"\";\nif (response.choices && response.choices[0]) {\n  rawContent = response.choices[0].message.content;\n}\n\nif (!rawContent) {\n  return [{ json: { error: \"Empty response\", raw: response } }];\n}\n\nlet parsed;\ntry {\n  const jsonMatch = rawContent.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsed = JSON.parse(jsonMatch[0]);\n  } else {\n    parsed = JSON.parse(rawContent);\n  }\n} catch(e) {\n  return [{ json: { error: \"Could not parse\", raw: rawContent } }];\n}\n\n// Return single prompt only\nconst prompt = parsed.prompt || (parsed.prompts && parsed.prompts[0]) || \"beautiful scene\";\n\nreturn [\n  {\n    json: {\n      promptNumber: 1,\n      prompt: prompt\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        0
+      ],
+      "id": "4854b9d8-6277-4291-9e31-f9256f80ae7e",
+      "name": "extract prompt"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        576,
+        0
+      ],
+      "id": "7b1b99ae-a09e-4f42-81d7-59d037a2ce02",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://api.telegram.org/botYOUR_TELEGRAM_BOT_TOKEN/getUpdates",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "1"
+            },
+            {
+              "name": "offset",
+              "value": "-1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        768,
+        0
+      ],
+      "id": "75b05679-b717-4a7f-a010-0173ffa39bdb",
+      "name": "telegram poller"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\nif (!response.result || response.result.length === 0) {\n  return [];\n}\n\nconst update = response.result[0];\nconst message = update.message;\nif (!message) return [];\nif (!message.photo) return [];\n\n// Check if already processed\nconst staticData = $getWorkflowStaticData('global');\nconst lastProcessedId = staticData.lastUpdateId || 0;\n\nif (update.update_id <= lastProcessedId) {\n  return [];\n}\n\n// Save as processed\nstaticData.lastUpdateId = update.update_id;\n\n// Get user's description — whatever they typed\nconst userDescription = (message.caption || \"make it artistic and beautiful\").trim();\nconst chatId = message.chat.id;\n\n// Get highest quality photo\nconst photos = message.photo;\nconst fileId = photos[photos.length - 1].file_id;\n\n// Save to static data\nstaticData.userDescription = userDescription;\nstaticData.chatId = chatId;\n\nreturn [\n  {\n    json: {\n      fileId: fileId,\n      userDescription: userDescription,\n      chatId: chatId\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        0
+      ],
+      "id": "73812303-13a5-4303-a786-4a5a33be7392",
+      "name": "process input"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/botYOUR_TELEGRAM_BOT_TOKEN/getFile?file_id={{ $json.fileId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1184,
+        0
+      ],
+      "id": "857b79ea-526d-415c-9ab2-6d6cd7dd3b99",
+      "name": "get telegram file"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\nlet filePath = null;\nif (response.result && response.result.file_path) {\n  filePath = response.result.file_path;\n}\n\nif (!filePath) {\n  return [{ json: { error: \"No file path found\" } }];\n}\n\nconst botToken = \"YOUR_TELEGRAM_BOT_TOKEN\";\nconst imageUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;\n\nconst staticData = $getWorkflowStaticData('global');\n\nreturn [\n  {\n    json: {\n      imageUrl: imageUrl,\n      userDescription: staticData.userDescription,\n      chatId: staticData.chatId\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1376,
+        0
+      ],
+      "id": "cdcdb518-aa59-4bd8-bbcc-8c9b4fc21c0f",
+      "name": "build image url"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n\n// Get image analysis from Mistral\nlet imageAnalysis = \"A detailed scene\";\nif (response.choices && response.choices[0]) {\n  imageAnalysis = response.choices[0].message.content;\n}\n\nconst staticData = $getWorkflowStaticData('global');\n\nreturn [\n  {\n    json: {\n      imageAnalysis: imageAnalysis,\n      userDescription: staticData.userDescription,\n      chatId: staticData.chatId\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        0
+      ],
+      "id": "acfc00ee-ddb6-4b27-9321-673dadca4ff3",
+      "name": "build prompt data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_MISTRAL_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"pixtral-12b-2409\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"{{ $json.imageUrl }}\"\n          }\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"Describe this image in 2-3 sentences covering subject, composition, colors, lighting and mood. Be precise for use as an AI image generation prompt.\"\n        }\n      ]\n    }\n  ],\n  \"max_tokens\": 256,\n  \"temperature\": 0.3\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1568,
+        0
+      ],
+      "id": "a9919107-7b94-4dd4-b68f-961fad4eb843",
+      "name": "image analyser"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_GROQ_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "llama-3.3-70b-versatile"
+            },
+            {
+              "name": "messages",
+              "value": "={{$json.captionMessages}}"
+            },
+            {
+              "name": "temperature",
+              "value": "={{$json.temperature}}"
+            },
+            {
+              "name": "max_tokens",
+              "value": "={{$json.maxTokens}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2704,
+        224
+      ],
+      "id": "e32ecd2d-77d2-44f0-a5ad-e6919f5b2521",
+      "name": "caption generator"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_GROQ_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "llama-3.3-70b-versatile"
+            },
+            {
+              "name": "messages",
+              "value": "={{ $json.groqMessages }}"
+            },
+            {
+              "name": "temperature",
+              "value": "={{ $json.temperature }}"
+            },
+            {
+              "name": "max_tokens",
+              "value": "={{ $json.maxTokens }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2096,
+        0
+      ],
+      "id": "8f20ce4e-2020-4b22-a1cc-c97b6e3f5a76",
+      "name": "prompt generator"
+    },
+    {
+      "parameters": {
+        "jsCode": "const imageAnalysis = $input.first().json.imageAnalysis || \"a detailed scene\";\nconst userDescription = $input.first().json.userDescription || \"make it artistic\";\nconst chatId = $input.first().json.chatId;\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.imageAnalysis = imageAnalysis;\nstaticData.userDescription = userDescription;\nstaticData.chatId = chatId;\n\n// Caption messages saved to static data for later use\nstaticData.captionMessages = [\n  {\n    role: \"system\",\n    content: \"Write natural human captions. Never mention AI or technology. Write as if a real artist created this. End with exactly 5 hashtags. Return ONLY the caption text.\"\n  },\n  {\n    role: \"user\",\n    content: \"Image shows: \" + imageAnalysis + \"\\nCreative direction: \" + userDescription + \"\\n\\nWrite engaging caption under 100 words with 5 hashtags at the end.\"\n  }\n];\n\nreturn [\n  {\n    json: {\n      imageAnalysis: imageAnalysis,\n      userDescription: userDescription,\n      chatId: chatId,\n      groqMessages: [\n        {\n  role: \"system\",\n  content: \"You are an expert AI image prompt engineer. Create one detailed FLUX image generation prompt. Always end the prompt with these quality boosters: highly detailed, sharp focus, professional quality, 8K resolution. Keep the core subject from the base image. Return ONLY valid JSON: {\\\"prompt\\\": \\\"your detailed prompt here\\\"}\"\n},\n        {\n          role: \"user\",\n          content: \"Base image shows: \" + imageAnalysis + \"\\n\\nUser wants: \" + userDescription + \"\\n\\nCreate one detailed transformation prompt. Be specific about style, lighting, colors, mood.\"\n        }\n      ],\n      temperature: 0.85,\n      maxTokens: 512\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        0
+      ],
+      "id": "ca24a63a-19e2-48b0-b53c-b4963ab21073",
+      "name": "build body groq"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst imageAnalysis = staticData.imageAnalysis || \"a beautiful scene\";\nconst userDescription = staticData.userDescription || \"make it artistic\";\nconst chatId = staticData.chatId;\n\nreturn [\n  {\n    json: {\n      imageUrl: $input.first().json.imageUrl,\n      chatId: chatId,\n      captionMessages: [\n        {\n          role: \"system\",\n          content: \"Write natural, grounded captions about what is actually shown in the image. Be specific about the actual scene. Never mention AI, technology, or art generation. Write as a nature photographer or traveler would. End with exactly 5 relevant hashtags. Return ONLY the caption text, nothing else.\"\n        },\n        {\n          role: \"user\",\n          content: \"The image shows: \" + imageAnalysis + \"\\nCreative style applied: \" + userDescription + \"\\n\\nWrite a specific, grounded caption about this exact scene. Under 80 words. 5 hashtags.\"\n        }\n      ],\n      temperature: 0.9,\n      maxTokens: 256\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2480,
+        224
+      ],
+      "id": "b9e0e3b6-20f4-4239-bae0-1a86fa695b30",
+      "name": "build caption body"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Flux image generator": {
+      "main": [
+        [
+          {
+            "node": "extract image url",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "extract image url": {
+      "main": [
+        [
+          {
+            "node": "download image",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "build caption body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "download image": {
+      "main": [
+        [
+          {
+            "node": "upload to MinIO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "upload to MinIO": {
+      "main": [
+        []
+      ]
+    },
+    "Extract caption": {
+      "main": [
+        [
+          {
+            "node": "telegram bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "telegram bot": {
+      "main": [
+        []
+      ]
+    },
+    "extract prompt": {
+      "main": [
+        [
+          {
+            "node": "Flux image generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "telegram poller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "telegram poller": {
+      "main": [
+        [
+          {
+            "node": "process input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "process input": {
+      "main": [
+        [
+          {
+            "node": "get telegram file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get telegram file": {
+      "main": [
+        [
+          {
+            "node": "build image url",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build image url": {
+      "main": [
+        [
+          {
+            "node": "image analyser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build prompt data": {
+      "main": [
+        [
+          {
+            "node": "build body groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "image analyser": {
+      "main": [
+        [
+          {
+            "node": "build prompt data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "caption generator": {
+      "main": [
+        [
+          {
+            "node": "Extract caption",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prompt generator": {
+      "main": [
+        [
+          {
+            "node": "extract prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build body groq": {
+      "main": [
+        [
+          {
+            "node": "prompt generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build caption body": {
+      "main": [
+        [
+          {
+            "node": "caption generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "11d7632c-29b5-45e2-b5f7-4035e5e41e87",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "200c96f755bad4a7ff6ef304759fef014f028363840b334098eb0f31ae9ead41"
+  },
+  "id": "oIPAr1tVhqn0WTdG",
+  "tags": []
+}

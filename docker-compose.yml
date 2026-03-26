@@ -1,0 +1,30 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - GENERIC_TIMEZONE=Asia/Kolkata
+    volumes:
+      - ./n8n-data:/home/node/.n8n
+    depends_on:
+      - minio
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=YOUR_MINIO_USERNAME
+      - MINIO_ROOT_PASSWORD=YOUR_MINIO_PASSWORD
+    volumes:
+      - ./minio-data:/data
+    command: server /data --console-address ":9001"
